@@ -24,7 +24,7 @@ class SquareCaptchaHandler(BaseCaptchaHandler):
 
     GRID_SIZE = 450
 
-    def solve(self, browser: Any, target_class: int) -> list[int]:
+    def solve(self, browser: Any, target_class: int, keyword: str | None = None) -> list[int]:
         """Solve a square 4x4 captcha using object detection.
 
         Uses the YOLO detection model to find all instances of the target
@@ -33,37 +33,55 @@ class SquareCaptchaHandler(BaseCaptchaHandler):
         Args:
             browser: Browser instance from recaptcha_domain_replicator.
             target_class: COCO class index.
+            keyword: Target keyword for vision LLM analysis.
 
         Returns:
             List of cells that were clicked.
         """
         # Get target keyword and map to COCO class for detection
-        keyword = get_target_keyword(browser)
+        keyword = keyword or get_target_keyword(browser)
         if not keyword:
             self.logger.warning("Could not extract target keyword")
             return []
 
-        coco_class = self.detector.get_coco_target_class(keyword)
-        if coco_class is None:
-            self.logger.critical(f"Unknown target for detection: {keyword}")
-            return []
+        # Use vision detector if available
+        if self.vision_detector and keyword:
+            answers = self.vision_detector.detect_for_grid_with_keyword_sync(
+                main_image=None,  # Will be downloaded below
+                keyword=keyword,
+                grid_size=self.GRID_SIZE,
+            )
+            # We need to download the image first
+            img_urls = self.get_image_urls(browser)
+            if not img_urls:
+                self.logger.warning("No captcha images found")
+                return []
+            _, main_image = self.download_main_image(img_urls[0])
+            answers = self.vision_detector.detect_for_grid_with_keyword_sync(
+                main_image, keyword, self.GRID_SIZE
+            )
+        else:
+            coco_class = self.detector.get_coco_target_class(keyword)
+            if coco_class is None:
+                self.logger.critical(f"Unknown target for detection: {keyword}")
+                return []
 
-        self.logger.debug(f"Target: '{keyword}' -> COCO class {coco_class}")
+            self.logger.debug(f"Target: '{keyword}' -> COCO class {coco_class}")
 
-        # Get image URLs and download main image
-        img_urls = self.get_image_urls(browser)
-        if not img_urls:
-            self.logger.warning("No captcha images found")
-            return []
+            # Get image URLs and download main image
+            img_urls = self.get_image_urls(browser)
+            if not img_urls:
+                self.logger.warning("No captcha images found")
+                return []
 
-        _, main_image = self.download_main_image(img_urls[0])
+            _, main_image = self.download_main_image(img_urls[0])
 
-        # Detect targets using full-image detection and map to grid cells
-        answers = self.detector.detect_for_grid(
-            main_image,
-            target_class=coco_class,
-            grid_size=self.GRID_SIZE,
-        )
+            # Detect targets using full-image detection and map to grid cells
+            answers = self.detector.detect_for_grid(
+                main_image,
+                target_class=coco_class,
+                grid_size=self.GRID_SIZE,
+            )
 
         if not answers:
             self.logger.info("No targets detected")

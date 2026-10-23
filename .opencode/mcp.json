@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "vision-ai-recaptcha-solver": {
+      "command": "python",
+      "args": [
+        "-m",
+        "vision_ai_recaptcha_solver.mcp_server"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      }
+    }
+  }
+}

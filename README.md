@@ -12,27 +12,29 @@
 
 </div>
 
-AI powered reCAPTCHA solver for reCAPTCHA v2 and v3 using YOLO based vision models (57k images dataset). The library provides both synchronous and asynchronous APIs, to automate image challenge solving and token extraction.
+AI powered reCAPTCHA solver for reCAPTCHA v2 and v3 using YOLO based vision models (57k images dataset) and optional Vision LLM (OpenAI-compatible APIs). The library provides both synchronous and asynchronous APIs, to automate image challenge solving and token extraction.
 
 https://github.com/user-attachments/assets/3d0de5bd-6bbd-4a1a-bb06-fd7efa9d55fd
 
 ## Key features
 
 - Supports reCAPTCHA v2 image challenges (3x3 selection, 3x3 dynamic, 4x4 square) and v3 invisible flows
+- **Vision LLM support** - Use OpenAI-compatible vision models (e.g., llama-3.2-90b-vision-instruct) for cloud-based image analysis
 - Synchronous and asynchronous solver APIs with context manager support
 - Configurable proxy, browser path, timeouts, and detection thresholds
 - CLI for quick testing and automation
 - Works in headless mode
 - Automatic model warmup and background initialization
 - Automatic model downloads on first run (classification + detection)
+- **MCP Server** - Expose solver functionality to AI agents via Model Context Protocol
 
 ## How it works
 
 1. `recaptcha-domain-replicator` spins up a local HTTPS server and replicates the target reCAPTCHA widget.
 2. A Chromium browser session is launched and the checkbox/challenge is interacted with automatically.
-3. Challenge images are downloaded and analyzed by YOLO models:
-   - Classification model for 3x3 challenges
-   - Detection model for 4x4 challenges
+3. Challenge images are downloaded and analyzed:
+   - **YOLO models** (local): Classification model for 3x3 challenges, Detection model for 4x4 challenges
+   - **Vision LLM** (optional, cloud): Full grid image sent to vision model with keyword prompt, returns cell numbers + confidences
 4. The solver clicks the predicted tiles, submits verification, and extracts the token.
 
 ### RecaptchaDomainReplicator usage
@@ -60,6 +62,20 @@ python -m venv .venv
 pip install -e ".[dev]"
 ```
 
+### Optional: Vision LLM support
+
+To use Vision LLM instead of (or alongside) YOLO:
+
+```bash
+pip install vision-ai-recaptcha-solver[vision]
+```
+
+Or with MCP server support:
+
+```bash
+pip install vision-ai-recaptcha-solver[mcp]
+```
+
 ## Quick start (synchronous)
 
 ```python
@@ -82,6 +98,31 @@ print(result.token)
 print(result.captcha_type.value)
 print(result.time_taken)
 print(result.attempts)
+```
+
+### Using Vision LLM (cloud-based)
+
+```python
+from vision_ai_recaptcha_solver import RecaptchaSolver, SolverConfig
+
+config = SolverConfig(
+    # Vision LLM configuration
+    vision_model="llama-3.2-90b-vision-instruct",
+    vision_api_base="https://llm.datasolved.org/v1",
+    vision_api_key="your-api-key",
+    vision_timeout=30.0,
+    
+    # Optional browser settings
+    headless=True,
+    timeout=180,
+)
+
+with RecaptchaSolver(config) as solver:
+    result = solver.solve(
+        website_key="6Le-wvkSAAAAAPBMRTvw0Q4Muexq9bi0DJwx_mJ-",
+        website_url="https://www.google.com/recaptcha/api2/demo"
+    )
+    print(result.token)
 ```
 
 ### Invisible reCAPTCHA (v3)
@@ -199,9 +240,57 @@ Run a demo against Google's test page:
 vision-ai-recaptcha-solver demo
 ```
 
+### With Vision LLM via CLI
+
+Set environment variables or use config file:
+
+```bash
+export VISION_MODEL="llama-3.2-90b-vision-instruct"
+export VISION_API_BASE="https://llm.datasolved.org/v1"
+export VISION_API_KEY="your-api-key"
+
+vision-ai-recaptcha-solver solve \
+  --website-key "your_site_key" \
+  --website-url "https://example.com/page"
+```
+
+## MCP Server (for AI agents)
+
+The solver can be exposed as an MCP (Model Context Protocol) server for AI agents:
+
+```bash
+# Start MCP server
+python -m vision_ai_recaptcha_solver.mcp_server
+```
+
+Or configure in your MCP client (e.g., `.opencode/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "vision-ai-recaptcha-solver": {
+      "command": "python",
+      "args": ["-m", "vision_ai_recaptcha_solver.mcp_server"],
+      "cwd": "/path/to/VisionAIRecaptchaSolver",
+      "env": {
+        "PYTHONPATH": "/path/to/VisionAIRecaptchaSolver/src"
+      }
+    }
+  }
+}
+```
+
+Available MCP tools:
+- `solve_recaptcha` - Sync solve with full config
+- `solve_recaptcha_async` - Async solve
+- `demo_recaptcha` - Run demo on Google's test page
+- `get_solver_info` - Get capabilities and configuration
+
 ## Configuration reference
 
 `SolverConfig` controls runtime behavior and validation.
+
+### YOLO / Core options
 
 | Option | Default | Description |
 | --- | --- | --- |
@@ -219,6 +308,11 @@ vision-ai-recaptcha-solver demo
 | `log_level` | `"WARNING"` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`). |
 | `persist_html` | `False` | Persist the generated HTML replicas. |
 | `verbose` | `False` | Enable verbose output. |
+
+### Detection thresholds
+
+| Option | Default | Description |
+| --- | --- | --- |
 | `conf_threshold` | `0.7` | Tile classification confidence threshold. |
 | `min_confidence_threshold` | `0.2` | Minimum confidence for top 3 tiles (3x3). |
 | `fourth_cell_threshold` | `0.7` | Confidence threshold to include 4th cell. |
@@ -226,6 +320,20 @@ vision-ai-recaptcha-solver demo
 | `default_timeout` | `10.0` | Default timeout for browser operations. |
 | `image_download_retries` | `3` | Image download retries. |
 | `image_download_retry_delay` | `1.0` | Base delay between retries. |
+
+### Vision LLM options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `vision_model` | `None` | Vision LLM model name (e.g., `llama-3.2-90b-vision-instruct`). Enables cloud-based analysis. |
+| `vision_api_base` | `None` | OpenAI-compatible API base URL (e.g., `https://llm.datasolved.org/v1`). |
+| `vision_api_key` | `None` | API key for the vision LLM provider. |
+| `vision_timeout` | `30.0` | Timeout for vision LLM API requests in seconds. |
+
+### Other options
+
+| Option | Default | Description |
+| --- | --- | --- |
 | `register_signal_handlers` | `True` | Register SIGINT/SIGTERM handlers for cleanup. |
 | `cleanup_tmp_on_close` | `True` | Delete `download_dir` when solver closes. |
 
@@ -266,8 +374,7 @@ Both `RecaptchaSolver.solve()` and `AsyncRecaptchaSolver.solve()` support:
 
 ## Example scripts
 
-The repo includes two runnable demos that hit Google's public test page and show
-token extraction timing and captcha type detection. Treat them as templates.
+The repo includes two runnable demos that hit Google's public test page and show token extraction timing and captcha type detection. Treat them as templates.
 
 - `demo.py`: synchronous solve with `RecaptchaSolver`
   - Run: `python demo.py`
@@ -284,25 +391,35 @@ Run tests:
 pytest
 ```
 
+Type checking:
+
+```bash
+mypy src/
+```
+
+Linting:
+
+```bash
+ruff check src/
+```
+
 ## Project layout
 
 - `src/vision_ai_recaptcha_solver/` - core library
 - `src/vision_ai_recaptcha_solver/captcha/` - handlers for challenge types
-- `src/vision_ai_recaptcha_solver/detector/` - YOLO model integration
+- `src/vision_ai_recaptcha_solver/detector/` - YOLO model integration + Vision LLM detector
 - `src/vision_ai_recaptcha_solver/models/` - model assets
 - `tests/` - unit tests
 - `demo.py`, `demo_async.py` - example scripts
+- `.opencode/mcp.json` - MCP server configuration
 
 ## Troubleshooting
 
-- `browser_path does not exist`: Pass a valid Chromium executable path in `SolverConfig(browser_path=...)`.
-  On Windows, the path should end with `.exe`.
-- `Invalid proxy URL format`: Proxy must be `protocol://[user:pass@]host:port`. Supported protocols:
-  `http`, `https`, `socks4`, `socks5`. [] means optional.
-- `CaptchaNotFoundError` or `ElementNotFoundError`: Confirm `website_url` points to a page that
-  renders the reCAPTCHA iframe and that the `website_key` matches that page.
-- `Port or temp directory conflicts`: When running multiple solvers, set unique `server_port` and
-  `download_dir` values, or let them auto-select by not setting those fields explicitly.
+- `browser_path does not exist`: Pass a valid Chromium executable path in `SolverConfig(browser_path=...)`. On Windows, the path should end with `.exe`.
+- `Invalid proxy URL format`: Proxy must be `protocol://[user:pass@]host:port`. Supported protocols: `http`, `https`, `socks4`, `socks5`. [] means optional.
+- `CaptchaNotFoundError` or `ElementNotFoundError`: Confirm `website_url` points to a page that renders the reCAPTCHA iframe and that the `website_key` matches that page.
+- `Port or temp directory conflicts`: When running multiple solvers, set unique `server_port` and `download_dir` values, or let them auto-select by not setting those fields explicitly.
+- Vision LLM errors: Ensure `vision_api_base`, `vision_api_key`, and `vision_model` are correctly set. Check API endpoint compatibility (OpenAI-compatible `/chat/completions`).
 
 ## Legal & Responsible Use
 

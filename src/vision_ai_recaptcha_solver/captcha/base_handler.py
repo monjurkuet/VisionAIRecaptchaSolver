@@ -15,7 +15,7 @@ from vision_ai_recaptcha_solver.browser.navigation import (
 )
 from vision_ai_recaptcha_solver.captcha.image_utils import download_image, load_image_as_array
 from vision_ai_recaptcha_solver.config import SolverConfig
-from vision_ai_recaptcha_solver.detector.yolo_detector import YOLODetector
+from vision_ai_recaptcha_solver.detector import VisionLLMDetector, YOLODetector
 from vision_ai_recaptcha_solver.utils import human_delay as shared_human_delay
 
 if TYPE_CHECKING:
@@ -34,6 +34,7 @@ class BaseCaptchaHandler(ABC):
         detector: YOLODetector,
         config: SolverConfig,
         logger: logging.Logger | None = None,
+        vision_detector: VisionLLMDetector | None = None,
     ) -> None:
         """Initialize the captcha handler.
 
@@ -41,19 +42,22 @@ class BaseCaptchaHandler(ABC):
             detector: YOLO detector instance for image analysis.
             config: Solver configuration.
             logger: Logger instance. If None, creates a new one.
+            vision_detector: Optional Vision LLM detector for keyword-based analysis.
         """
         self.detector = detector
+        self.vision_detector = vision_detector
         self.config = config
         self.logger = logger or logging.getLogger(__name__)
         self._work_dir = config.download_dir
 
     @abstractmethod
-    def solve(self, browser: Any, target_class: int) -> list[int]:
+    def solve(self, browser: Any, target_class: int, keyword: str | None = None) -> list[int]:
         """Solve the captcha and return the cells that were clicked.
 
         Args:
             browser: Browser instance from recaptcha_domain_replicator.
             target_class: YOLO class of the target object.
+            keyword: Target keyword (e.g., "bus", "traffic light") for vision LLM.
 
         Returns:
             List of cell indices that were clicked.

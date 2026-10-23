@@ -32,7 +32,7 @@ class DynamicCaptchaHandler(BaseCaptchaHandler):
 
     captcha_type = CaptchaType.DYNAMIC_3X3
 
-    def solve(self, browser: Any, target_class: int) -> list[int]:
+    def solve(self, browser: Any, target_class: int, keyword: str | None = None) -> list[int]:
         """Solve a dynamic 3x3 captcha.
 
         Note: Initial detection uses ranking based selection (top 3 + optional 4th).
@@ -42,6 +42,7 @@ class DynamicCaptchaHandler(BaseCaptchaHandler):
         Args:
             browser: Browser instance from recaptcha_domain_replicator.
             target_class: YOLO class index of the target object.
+            keyword: Target keyword for vision LLM analysis.
 
         Returns:
             List of all cells that were clicked during solving.
@@ -64,10 +65,15 @@ class DynamicCaptchaHandler(BaseCaptchaHandler):
         # There's one combined image (300x300)
         main_path, main_image = self.download_main_image(unique_urls[0])
 
-        # Initial detection, with ranking selection
-        cell_confidences = self.detector.classify_tiles_with_confidence(
-            main_image, grid_size=3, target_class=target_class
-        )
+        # Initial detection - use vision detector if available and keyword provided
+        if self.vision_detector and keyword:
+            cell_confidences = self.vision_detector.analyze_with_keyword_sync(
+                main_image, keyword, grid_size=3
+            )
+        else:
+            cell_confidences = self.detector.classify_tiles_with_confidence(
+                main_image, grid_size=3, target_class=target_class
+            )
 
         # Rank by confidence
         ranked = sorted(cell_confidences, key=lambda x: x[1], reverse=True)
@@ -132,7 +138,7 @@ class DynamicCaptchaHandler(BaseCaptchaHandler):
             tiles_to_analyze = set(answers)
 
             answers = self._detect_with_cache(
-                main_image, target_class, non_matching_cache, tiles_to_analyze
+                main_image, target_class, non_matching_cache, tiles_to_analyze, keyword
             )
 
             if not answers:
@@ -157,6 +163,7 @@ class DynamicCaptchaHandler(BaseCaptchaHandler):
         target_class: int,
         non_matching_cache: set[int],
         tiles_to_analyze: set[int],
+        keyword: str | None = None,
     ) -> list[int]:
         """Detect targets only in specified tiles, using cache to skip known non-matches.
 
@@ -167,10 +174,30 @@ class DynamicCaptchaHandler(BaseCaptchaHandler):
             target_class: Class index of the target.
             non_matching_cache: Set of cell numbers (1-indexed) known to not match.
             tiles_to_analyze: Set of cell numbers (1-indexed) to analyze.
+            keyword: Target keyword for vision LLM analysis.
 
         Returns:
             List of cell numbers containing the target.
         """
+        # Use vision detector if available and keyword provided
+        if self.vision_detector and keyword:
+            cell_confidences = self.vision_detector.analyze_with_keyword_sync(
+                image, keyword, grid_size=3
+            )
+
+            conf_threshold = self.config.conf_threshold
+            answers = []
+            for cell_num, target_conf in cell_confidences:
+                if cell_num in non_matching_cache or cell_num not in tiles_to_analyze:
+                    continue
+                if target_conf >= conf_threshold:
+                    self.logger.debug(f"Tile {cell_num}: target conf {target_conf:.2f} SUCCESS TARGET")
+                    answers.append(cell_num)
+                else:
+                    self.logger.debug(f"Tile {cell_num}: target conf {target_conf:.2f}")
+                    non_matching_cache.add(cell_num)
+            return answers
+
         img_height, img_width = image.shape[:2]
         grid_size = 3
         tile_h = img_height // grid_size

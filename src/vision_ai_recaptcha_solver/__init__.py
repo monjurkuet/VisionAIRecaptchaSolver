@@ -9,6 +9,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from vision_ai_recaptcha_solver.async_solver import AsyncRecaptchaSolver
 from vision_ai_recaptcha_solver.config import SolverConfig
+from vision_ai_recaptcha_solver.detector import VisionLLMDetector, create_vision_detector
 from vision_ai_recaptcha_solver.exceptions import (
     BrowserError,
     CaptchaNotFoundError,
@@ -49,6 +50,8 @@ __all__ = [
     "CLASS_NAMES",
     "TARGET_MAPPINGS",
     "COCO_TARGET_MAPPINGS",
+    "VisionLLMDetector",
+    "create_vision_detector",
     "RecaptchaSolverError",
     "BrowserError",
     "CaptchaNotFoundError",

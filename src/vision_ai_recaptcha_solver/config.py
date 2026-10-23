@@ -58,6 +58,10 @@ class SolverConfig:
         default_timeout: Default timeout for browser operations in seconds.
         image_download_retries: Number of retries for image downloads.
         image_download_retry_delay: Base delay between retries in seconds.
+        vision_model: Vision LLM model name (e.g., "llama-3.2-90b-vision-instruct"). If set, uses vision LLM instead of YOLO for classification.
+        vision_api_base: Base URL for vision LLM API (e.g., "https://llm.datasolved.org/v1").
+        vision_api_key: API key for vision LLM API.
+        vision_timeout: Timeout for vision LLM API requests in seconds.
         register_signal_handlers: Whether to register signal handlers for cleanup on
             SIGINT/SIGTERM. Set to False if your application needs to manage its own
             signal handlers. Default is True.
@@ -91,6 +95,12 @@ class SolverConfig:
     # Retry configuration for image downloads
     image_download_retries: int = 3
     image_download_retry_delay: float = 1.0
+
+    # Vision LLM configuration
+    vision_model: str | None = None
+    vision_api_base: str | None = None
+    vision_api_key: str | None = None
+    vision_timeout: float = 30.0
 
     # Signal handler registration
     register_signal_handlers: bool = True
@@ -156,6 +166,16 @@ class SolverConfig:
             raise ValueError(
                 f"image_download_retry_delay must be non-negative, got {self.image_download_retry_delay}"
             )
+
+        # Validate vision LLM configuration
+        if self.vision_model is not None and not isinstance(self.vision_model, str):
+            raise ValueError(f"vision_model must be a string or None, got {type(self.vision_model)}")
+        if self.vision_api_base is not None and not isinstance(self.vision_api_base, str):
+            raise ValueError(f"vision_api_base must be a string or None, got {type(self.vision_api_base)}")
+        if self.vision_api_key is not None and not isinstance(self.vision_api_key, str):
+            raise ValueError(f"vision_api_key must be a string or None, got {type(self.vision_api_key)}")
+        if self.vision_timeout is not None and self.vision_timeout <= 0:
+            raise ValueError(f"vision_timeout must be positive, got {self.vision_timeout}")
 
         # Validate proxy URL format if provided
         if self.proxy is not None:

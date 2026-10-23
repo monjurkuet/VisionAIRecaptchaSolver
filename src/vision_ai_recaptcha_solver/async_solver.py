@@ -24,7 +24,11 @@ from vision_ai_recaptcha_solver.captcha.dynamic_handler import DynamicCaptchaHan
 from vision_ai_recaptcha_solver.captcha.selection_handler import SelectionCaptchaHandler
 from vision_ai_recaptcha_solver.captcha.square_handler import SquareCaptchaHandler
 from vision_ai_recaptcha_solver.config import SolverConfig
-from vision_ai_recaptcha_solver.detector.yolo_detector import YOLODetector
+from vision_ai_recaptcha_solver.detector import (
+    YOLODetector,
+    VisionLLMDetector,
+    create_vision_detector,
+)
 from vision_ai_recaptcha_solver.exceptions import (
     CaptchaNotFoundError,
     ElementNotFoundError,
@@ -84,9 +88,11 @@ class AsyncRecaptchaSolver:
         self._closed: bool = False
         self._executor: ThreadPoolExecutor | None = None
         self._detector: YOLODetector | None = None
+        self._vision_detector: VisionLLMDetector | None = None
         self._handlers: dict[CaptchaType, BaseCaptchaHandler] | None = None
         self._replicator: Any = None
         self._owns_download_dir: bool = False
+        self._current_keyword: str | None = None
         self._init_download_dir()
 
     def _init_download_dir(self) -> None:
@@ -199,15 +205,20 @@ class AsyncRecaptchaSolver:
             detection_conf_threshold=self.config.detection_conf_threshold,
         )
 
+        # Initialize Vision LLM detector if configured
+        self._vision_detector = create_vision_detector(self.config, self.logger)
+
         # Initialize handlers
         self._handlers = {
             CaptchaType.DYNAMIC_3X3: DynamicCaptchaHandler(
-                self._detector, self.config, self.logger
+                self._detector, self.config, self.logger, vision_detector=self._vision_detector
             ),
             CaptchaType.SELECTION_3X3: SelectionCaptchaHandler(
-                self._detector, self.config, self.logger
+                self._detector, self.config, self.logger, vision_detector=self._vision_detector
             ),
-            CaptchaType.SQUARE_4X4: SquareCaptchaHandler(self._detector, self.config, self.logger),
+            CaptchaType.SQUARE_4X4: SquareCaptchaHandler(
+                self._detector, self.config, self.logger, vision_detector=self._vision_detector
+            ),
         }
 
     async def solve(
@@ -389,8 +400,9 @@ class AsyncRecaptchaSolver:
 
                     # Get handler and solve
                     handler = self._get_handler(captcha_type)
+                    keyword = self._get_current_keyword()
                     clicked_cells = await self._run_in_executor(
-                        handler.solve, browser, target_class
+                        handler.solve, browser, target_class, keyword
                     )
 
                     if not clicked_cells:
@@ -537,7 +549,19 @@ class AsyncRecaptchaSolver:
         keyword = get_target_keyword(browser)
         if not keyword or self._detector is None:
             return None
+
+        # Store keyword for vision detector
+        self._current_keyword = keyword
+
         return self._detector.get_target_class(keyword)
+
+    def _get_current_keyword(self) -> str | None:
+        """Get the current target keyword.
+
+        Returns:
+            Current keyword, or None if not set.
+        """
+        return self._current_keyword
 
     def _get_handler(self, captcha_type: CaptchaType) -> BaseCaptchaHandler:
         """Get the appropriate handler for a captcha type."""

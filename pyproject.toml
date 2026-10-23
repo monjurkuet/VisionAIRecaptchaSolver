@@ -42,6 +42,12 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.0",
 ]
+vision = [
+    "mcp>=2.0.0",
+]
+mcp = [
+    "mcp>=2.0.0",
+]
 
 [project.scripts]
 vision-ai-recaptcha-solver = "vision_ai_recaptcha_solver.__main__:cli"

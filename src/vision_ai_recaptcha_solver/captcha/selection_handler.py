@@ -21,7 +21,7 @@ class SelectionCaptchaHandler(BaseCaptchaHandler):
 
     captcha_type = CaptchaType.SELECTION_3X3
 
-    def solve(self, browser: Any, target_class: int) -> list[int]:
+    def solve(self, browser: Any, target_class: int, keyword: str | None = None) -> list[int]:
         """Solve a selection 3x3 captcha.
 
         Uses ranking based selection, always click top 3 cells by target confidence,
@@ -33,6 +33,7 @@ class SelectionCaptchaHandler(BaseCaptchaHandler):
         Args:
             browser: Browser instance from recaptcha_domain_replicator.
             target_class: YOLO class index of the target object.
+            keyword: Target keyword for vision LLM analysis.
 
         Returns:
             List of cells that were clicked.
@@ -51,10 +52,15 @@ class SelectionCaptchaHandler(BaseCaptchaHandler):
         # Download the combined 3x3 grid image
         _, main_image = self.download_main_image(unique_urls[0])
 
-        # Get all cells with their target confidences
-        cell_confidences = self.detector.classify_tiles_with_confidence(
-            main_image, grid_size=3, target_class=target_class
-        )
+        # Get all cells with their target confidences - use vision detector if available
+        if self.vision_detector and keyword:
+            cell_confidences = self.vision_detector.analyze_with_keyword_sync(
+                main_image, keyword, grid_size=3
+            )
+        else:
+            cell_confidences = self.detector.classify_tiles_with_confidence(
+                main_image, grid_size=3, target_class=target_class
+            )
 
         # Rank by confidence
         ranked = sorted(cell_confidences, key=lambda x: x[1], reverse=True)
